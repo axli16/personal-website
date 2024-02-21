@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Andrew Li</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://kit.fontawesome.com/a239b6c81a.js" crossorigin="anonymous"></script>
+</head>
+<style>
+    /* customizable snowflake styling */
+    .snowflake {
+      color: #fff;
+      font-size: 1em;
+      font-family: Arial, sans-serif;
+      text-shadow: 0 0 5px #000;
+    }
+    
+    @-webkit-keyframes snowflakes-fall{0%{top:-10%}100%{top:100%}}@-webkit-keyframes snowflakes-shake{0%,100%{-webkit-transform:translateX(0);transform:translateX(0)}50%{-webkit-transform:translateX(80px);transform:translateX(80px)}}@keyframes snowflakes-fall{0%{top:-10%}100%{top:100%}}@keyframes snowflakes-shake{0%,100%{transform:translateX(0)}50%{transform:translateX(80px)}}.snowflake{position:fixed;top:-10%;z-index:9999;-webkit-user-select:none;-moz-user-select:none;-ms-user-select:none;user-select:none;cursor:default;-webkit-animation-name:snowflakes-fall,snowflakes-shake;-webkit-animation-duration:10s,3s;-webkit-animation-timing-function:linear,ease-in-out;-webkit-animation-iteration-count:infinite,infinite;-webkit-animation-play-state:running,running;animation-name:snowflakes-fall,snowflakes-shake;animation-duration:10s,3s;animation-timing-function:linear,ease-in-out;animation-iteration-count:infinite,infinite;animation-play-state:running,running}.snowflake:nth-of-type(0){left:1%;-webkit-animation-delay:0s,0s;animation-delay:0s,0s}.snowflake:nth-of-type(1){left:10%;-webkit-animation-delay:1s,1s;animation-delay:1s,1s}.snowflake:nth-of-type(2){left:20%;-webkit-animation-delay:6s,.5s;animation-delay:6s,.5s}.snowflake:nth-of-type(3){left:30%;-webkit-animation-delay:4s,2s;animation-delay:4s,2s}.snowflake:nth-of-type(4){left:40%;-webkit-animation-delay:2s,2s;animation-delay:2s,2s}.snowflake:nth-of-type(5){left:50%;-webkit-animation-delay:8s,3s;animation-delay:8s,3s}.snowflake:nth-of-type(6){left:60%;-webkit-animation-delay:6s,2s;animation-delay:6s,2s}.snowflake:nth-of-type(7){left:70%;-webkit-animation-delay:2.5s,1s;animation-delay:2.5s,1s}.snowflake:nth-of-type(8){left:80%;-webkit-animation-delay:1s,0s;animation-delay:1s,0s}.snowflake:nth-of-type(9){left:90%;-webkit-animation-delay:3s,1.5s;animation-delay:3s,1.5s}.snowflake:nth-of-type(10){left:25%;-webkit-animation-delay:2s,0s;animation-delay:2s,0s}.snowflake:nth-of-type(11){left:65%;-webkit-animation-delay:4s,2.5s;animation-delay:4s,2.5s}
+    </style>
+    <div class="snowflakes" aria-hidden="true">
+      <div class="snowflake">
+      ❅
+      </div>
+      <div class="snowflake">
+      ❆
+      </div>
+      <div class="snowflake">
+      ❅
+      </div>
+      <div class="snowflake">
+      ❆
+      </div>
+      <div class="snowflake">
+      ❅
+      </div>
+      <div class="snowflake">
+      ❆
+      </div>
+      <div class="snowflake">
+        ❅
+      </div>
+      <div class="snowflake">
+        ❆
+      </div>
+      <div class="snowflake">
+        ❅
+      </div>
+      <div class="snowflake">
+        ❆
+      </div>
+      <div class="snowflake">
+        ❅
+      </div>
+      <div class="snowflake">
+        ❆
+      </div>
+    </div>
+<body>
+    <div id="header">
+        <div class="container">
+            <nav>
+                <img src="images/Andrew Li (2).png" class="logo">
+                <ul id="sidemenu">
+                    <li><a href="#header">Home</a></li>
+                    <li><a href="#about">About</a></li>
+                    <li><a href="#projects">Projects</a></li>
+                    <li><a href="#contact">Contact</a></li>
+                    <i class="fas fa-solid fa-xmark" onclick="closemenu()"></i>
+                </ul>
+                <i class="fas fa-solid fa-bars" onclick="openmenu()"></i>
+            </nav>
+            <div class="header-text">
+                <p>Software Engineer</p>
+                <h1>Hi, I'm <span>Andrew</span><br>from Ottawa</h1>
+            </div>
+        </div>
+    </div>
+<!-- ----------about------------- -->
+    <div id="about">
+        <div class="container">
+            <div class="row">
+                <div class="about-col-1">
+                    <img src="images/Andrew Li (2).png" >
+                </div>
+                <div class="about-col-2">
+                    <h1 class="sub-title">About Me</h1>
+                    <p> Welcome to my personal website! I'm thrilled to have you here and share a little bit about myself.<br>
+
+                            I'm Andrew, a Software Engineer student at Carleton University. <br><br>
+                        
+                            From a young age, I've been captivated by software development and have dedicated my time and energy to honing my skills and knowledge in this area. I believe that technology has the power to create an innovative future, and I'm committed to contributing to its growth and advancement.<br><br>
+                        
+                            As an avid programer enthusiast, I constantly seek new challenges and opportunities to expand my horizons. I love creating devices that help me in daily life and am always eager to dive into projects that allow me to push boundaries and explore innovative solutions.<br><br>
+                        
+                            Beyond my professional pursuits, I find inspiration in sports, travel and friends. These activities provide me with a balanced perspective and fuel my creativity. Whether it's sports, music or travel, I firmly believe that a well-rounded life contributes to personal growth and enhances my ability to excel in my chosen field.<br><br>
+                        
+                            On this website, you'll find a collection of my work, thoughts, and insights. I aim to have a personal diary to show my growth and my progress along the journey. I hope that my experiences and perspectives resonate with you, spark conversations, and perhaps even ignite a shared passion for pursuing and learning coding yourself.<br><br>
+                        
+                            Thank you for joining me on this journey. I'm excited to connect with like-minded individuals, collaborate on meaningful projects, and make a positive impact together. Feel free to reach out through the provided contact information, and let's embark on this adventure of growth and discovery!</p>
+
+                    <div class="tab-titles">
+                        <p class="tab-links active-link" onclick="opentab('skills')">Skills</p>
+                        <p class="tab-links" onclick="opentab('experience')">Experience</p>
+                        <p class="tab-links" onclick="opentab('education')">Education</p>
+                    </div>
+                    <div class="tab-contents active-tab" id="skills">
+                        <ul>
+                            <li>UI/UX<span><br>HTMl & CSS<br>Laravel<br>React</span></li>
+                            <li>Backend<span><br>Java<br>Python<br>C<br>MySQL</span></li>
+                        </ul>
+                    </div>
+                    <div class="tab-contents" id="experience">
+                        <ul>
+                            <li>Software Developer-Myro<span><br>Developed and designed a website using Laravel, following design principles of proximity, alignment,
+                                repetition and contrast.<br>Executed automated test cases on written functions.<br> Gone through a whole development cycle.</span></li>
+                            <li>Backend Developer-PTC <span><br>Planned and developed software that improved efficiency of the team.<br>Developed a high quality online platform including website using HTML, CSS, and JavaScript for the company's page.<br>Developed a membership system using databases and security component for an added feature on the website.</span></li>
+                        </ul>
+                    </div>
+                    <div class="tab-contents" id="education">
+                        <ul>
+                            <li>Carleton University <span><br>2022-2026<br>Software Engineer</span></li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- ----------projects-------- -->
+    <div id="projects">
+        <div class="container">
+            <h1 class="sub-title">My work</h1>
+            <div class="work-list">
+                <div>
+                    <i class="fa-solid fa-qrcode"></i>
+                    <h2>QRcode Generator</h2>
+                    <p>description</p>
+                    <a href="https://github.com/axli16">Learn more</a>
+                </div>
+                <div>
+                    <i class="fa-solid fa-braille"></i>
+                    <h2>Brialle Keyboard</h2>
+                    <p>description</p>
+                    <a href="https://github.com/axli16">Learn more</a>
+                </div>
+                <div>
+                    <i class="fa-solid fa-code"></i>
+                    <h2>User login</h2>
+                    <p>description</p>
+                    <a href="https://github.com/axli16">Learn more</a>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- -----------contact---------->
+    <div id="contact">
+        <div class="container">
+            <div class="row">
+                <div class="contact-left">
+                    <h1 class="sub-title">Contact Me</h1>
+                    <p><i class="fa-sharp fa-solid fa-paper-plane"></i> andrew.x.L815@gmail.com</p>
+                    <p><i class="fa-solid fa-mobile"></i>613-864-9098</p>
+                    <div class="social-icons">
+                        <a href="https://www.linkedin.com/in/andrew-li-5bb254212/"><i class="fa-brands fa-linkedin"></i></a>
+                        <a href="https://github.com/axli16"><i class="fa-brands fa-github"></i></i></a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script>
+
+        var tablinks = document.getElementsByClassName("tab-links");
+        var tabcontents = document.getElementsByClassName("tab-contents");
+
+        function opentab(tabname){
+            for(tablink of tablinks){
+                tablink.classList.remove("active-link");
+            }
+            for(tabcontent of tabcontents){
+                tabcontent.classList.remove("active-tab");
+            }
+            event.currentTarget.classList.add("active-link");
+            document.getElementById(tabname).classList.add("active-tab");
+        }
+
+    </script>
+    <script>
+        
+        var sidemenu = document.getElementById("sidemenu");
+
+        function openmenu(){
+            sidemenu.style.right="0";
+        }
+        function closemenu(){
+            sidemenu.style.right="-200px";
+        }
+    </script>
+</body>
+</html>
