@@ -1,5 +1,7 @@
 import React, { useRef, useEffect, useState } from 'react';
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { MeshSurfaceSampler } from 'three/examples/jsm/math/MeshSurfaceSampler.js';
 
 export const PointCloudMorph = () => {
   const canvasRef = useRef(null);
@@ -14,62 +16,24 @@ export const PointCloudMorph = () => {
   const modelDataRef = useRef([]);
 
   // GLTFLoader equivalent using fetch and manual parsing
-  const loadGLB = async (url) => {
+  const loadGLB = async (url, targetCount = 5000) => {
     try {
-      const response = await fetch(url);
-      const arrayBuffer = await response.arrayBuffer();
+      const loader = new GLTFLoader();
+      const gltf =  await loader.loadAsync(url);
       
-      // Parse GLB format
-      const dataView = new DataView(arrayBuffer);
-      
-      // Check GLB magic number
-      const magic = dataView.getUint32(0, true);
-      if (magic !== 0x46546C67) { // "glTF"
-        throw new Error('Not a valid GLB file');
-      }
-      
-      // Get JSON chunk
-      const jsonChunkLength = dataView.getUint32(12, true);
-      const jsonChunkType = dataView.getUint32(16, true);
-      
-      if (jsonChunkType !== 0x4E4F534A) { // "JSON"
-        throw new Error('Invalid GLB format');
-      }
-      
-      const jsonData = new Uint8Array(arrayBuffer, 20, jsonChunkLength);
-      const gltf = JSON.parse(new TextDecoder().decode(jsonData));
-      
-      // Get binary chunk
-      const binaryChunkLength = dataView.getUint32(20 + jsonChunkLength, true);
-      const binaryData = new Uint8Array(arrayBuffer, 28 + jsonChunkLength, binaryChunkLength);
-      
-      // Extract mesh data
+      // collect positions from all meshes
       const positions = [];
-      
-      if (gltf.meshes && gltf.meshes.length > 0) {
-        for (const mesh of gltf.meshes) {
-          for (const primitive of mesh.primitives) {
-            const posAccessor = gltf.accessors[primitive.attributes.POSITION];
-            const posBufferView = gltf.bufferViews[posAccessor.bufferView];
-            
-            const componentType = posAccessor.componentType;
-            const count = posAccessor.count;
-            const byteOffset = (posBufferView.byteOffset || 0) + (posAccessor.byteOffset || 0);
-            
-            // Read position data
-            const TypedArray = componentType === 5126 ? Float32Array : Float32Array;
-            const posData = new TypedArray(
-              binaryData.buffer,
-              binaryData.byteOffset + byteOffset,
-              count * 3
-            );
-            
-            positions.push(...posData);
-          }
+      gltf.scene.traverse((child) => {
+        if (child.isMesh && child.geometry && child.geometry.attributes.position) {
+          const pos = child.geometry.attributes.position.array;
+          positions.push(...pos);
         }
-      }
-      
-      return new Float32Array(positions);
+      });
+
+      // use your sampling + color generation function
+      const data = samplePointsFromGeometry(positions, targetCount);
+
+      return data;
     } catch (err) {
       console.error('Error loading GLB:', err);
       throw err;
@@ -177,9 +141,9 @@ export const PointCloudMorph = () => {
 
         // Load GLB files - REPLACE THESE WITH YOUR FILE PATHS
         const glbUrls = [
-          './assets/Dumbell.glb',
-          './assets/computer.glb',
-          './assets/Motorcycle.glb'
+          'assets/Dumbbell.glb',
+          'assets/computer.glb',
+          'assets/Motorcycle.glb'
         ];
 
         const particleCount = 15000;
@@ -187,9 +151,8 @@ export const PointCloudMorph = () => {
         // Load all models
         for (const url of glbUrls) {
           try {
-            const positions = await loadGLB(url);
-            const data = samplePointsFromGeometry(positions, particleCount);
-            modelDataRef.current.push(data);
+            const points = await loadGLB(url);
+            modelDataRef.current.push(points);
           } catch (err) {
             console.error(`Failed to load ${url}:`, err);
             // Fallback to a simple shape if model fails to load
@@ -197,7 +160,7 @@ export const PointCloudMorph = () => {
             modelDataRef.current.push(fallbackData);
           }
         }
-
+        console.log(`Loaded ${modelDataRef.current.length} models.`);
         if (modelDataRef.current.length === 0) {
           throw new Error('No models loaded successfully');
         }
