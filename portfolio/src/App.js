@@ -1,7 +1,5 @@
 import React, { useRef, useEffect, useState } from 'react';
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { MeshSurfaceSampler } from 'three/examples/jsm/math/MeshSurfaceSampler.js';
 
 export const PointCloudMorph = () => {
   const canvasRef = useRef(null);
@@ -16,33 +14,72 @@ export const PointCloudMorph = () => {
   const modelDataRef = useRef([]);
 
   // GLTFLoader equivalent using fetch and manual parsing
-  const loadGLB = async (url, targetCount = 5000) => {
+  const loadGLB = async (url) => {
     try {
-      const loader = new GLTFLoader();
-      const gltf =  await loader.loadAsync(url);
+      const response = await fetch(url);
+      const arrayBuffer = await response.arrayBuffer();
       
-      // collect positions from all meshes
+      // Parse GLB format
+      const dataView = new DataView(arrayBuffer);
+      
+      // Check GLB magic number
+      const magic = dataView.getUint32(0, true);
+      if (magic !== 0x46546C67) { // "glTF"
+        throw new Error('Not a valid GLB file');
+      }
+      
+      // Get JSON chunk
+      const jsonChunkLength = dataView.getUint32(12, true);
+      const jsonChunkType = dataView.getUint32(16, true);
+      
+      if (jsonChunkType !== 0x4E4F534A) { // "JSON"
+        throw new Error('Invalid GLB format');
+      }
+      
+      const jsonData = new Uint8Array(arrayBuffer, 20, jsonChunkLength);
+      const gltf = JSON.parse(new TextDecoder().decode(jsonData));
+      
+      // Get binary chunk
+      const binaryChunkLength = dataView.getUint32(20 + jsonChunkLength, true);
+      const binaryData = new Uint8Array(arrayBuffer, 28 + jsonChunkLength, binaryChunkLength);
+      
+      // Extract mesh data
       const positions = [];
-      gltf.scene.traverse((child) => {
-        if (child.isMesh && child.geometry && child.geometry.attributes.position) {
-          const pos = child.geometry.attributes.position.array;
-          positions.push(...pos);
+      
+      if (gltf.meshes && gltf.meshes.length > 0) {
+        for (const mesh of gltf.meshes) {
+          for (const primitive of mesh.primitives) {
+            const posAccessor = gltf.accessors[primitive.attributes.POSITION];
+            const posBufferView = gltf.bufferViews[posAccessor.bufferView];
+            
+            const componentType = posAccessor.componentType;
+            const count = posAccessor.count;
+            const byteOffset = (posBufferView.byteOffset || 0) + (posAccessor.byteOffset || 0);
+            
+            // Read position data
+            const TypedArray = componentType === 5126 ? Float32Array : Float32Array;
+            const posData = new TypedArray(
+              binaryData.buffer,
+              binaryData.byteOffset + byteOffset,
+              count * 3
+            );
+            
+            positions.push(...posData);
+          }
         }
-      });
-
-      // use your sampling + color generation function
-      const data = samplePointsFromGeometry(positions, targetCount);
-
-      return data;
+      }
+      
+      return new Float32Array(positions);
     } catch (err) {
       console.error('Error loading GLB:', err);
       throw err;
     }
   };
 
-  // Sample points from mesh geometry
+  // Sample points from mesh geometry - samples across triangle surfaces
   const samplePointsFromGeometry = (positions, targetCount) => {
-    const sourceCount = positions.length / 3;
+    const vertexCount = positions.length / 3;
+    const triangleCount = Math.floor(vertexCount / 3);
     const sampledPositions = new Float32Array(targetCount * 3);
     const colors = new Float32Array(targetCount * 3);
     
@@ -51,7 +88,7 @@ export const PointCloudMorph = () => {
     let minY = Infinity, maxY = -Infinity;
     let minZ = Infinity, maxZ = -Infinity;
     
-    for (let i = 0; i < sourceCount; i++) {
+    for (let i = 0; i < vertexCount; i++) {
       const x = positions[i * 3];
       const y = positions[i * 3 + 1];
       const z = positions[i * 3 + 2];
@@ -65,16 +102,48 @@ export const PointCloudMorph = () => {
     const centerZ = (minZ + maxZ) / 2;
     const scale = Math.max(maxX - minX, maxY - minY, maxZ - minZ);
     
-    // Sample points
+    // Sample points across triangle surfaces using barycentric coordinates
     for (let i = 0; i < targetCount; i++) {
-      const sourceIndex = Math.floor(Math.random() * sourceCount);
+      // Pick a random triangle
+      const triangleIndex = Math.floor(Math.random() * triangleCount);
+      const v0Index = triangleIndex * 9; // 3 vertices * 3 components
+      
+      // Get the three vertices of the triangle
+      const v0x = positions[v0Index];
+      const v0y = positions[v0Index + 1];
+      const v0z = positions[v0Index + 2];
+      
+      const v1x = positions[v0Index + 3];
+      const v1y = positions[v0Index + 4];
+      const v1z = positions[v0Index + 5];
+      
+      const v2x = positions[v0Index + 6];
+      const v2y = positions[v0Index + 7];
+      const v2z = positions[v0Index + 8];
+      
+      // Generate random barycentric coordinates
+      let r1 = Math.random();
+      let r2 = Math.random();
+      
+      // Ensure point is inside triangle
+      if (r1 + r2 > 1) {
+        r1 = 1 - r1;
+        r2 = 1 - r2;
+      }
+      
+      const r3 = 1 - r1 - r2;
+      
+      // Interpolate position using barycentric coordinates
+      const x = v0x * r1 + v1x * r2 + v2x * r3;
+      const y = v0y * r1 + v1y * r2 + v2y * r3;
+      const z = v0z * r1 + v1z * r2 + v2z * r3;
+      
       const i3 = i * 3;
-      const si3 = sourceIndex * 3;
       
       // Normalize and center
-      sampledPositions[i3] = ((positions[si3] - centerX) / scale) * 2;
-      sampledPositions[i3 + 1] = ((positions[si3 + 1] - centerY) / scale) * 2;
-      sampledPositions[i3 + 2] = ((positions[si3 + 2] - centerZ) / scale) * 2;
+      sampledPositions[i3] = ((x - centerX) / scale) * 2;
+      sampledPositions[i3 + 1] = ((y - centerY) / scale) * 2;
+      sampledPositions[i3 + 2] = ((z - centerZ) / scale) * 2;
       
       // Generate colors based on model index
       const hue = (i / targetCount) * 360;
@@ -146,13 +215,14 @@ export const PointCloudMorph = () => {
           'assets/Motorcycle.glb'
         ];
 
-        const particleCount = 15000;
+        const particleCount = 50000;
 
         // Load all models
         for (const url of glbUrls) {
           try {
-            const points = await loadGLB(url);
-            modelDataRef.current.push(points);
+            const positions = await loadGLB(url);
+            const data = samplePointsFromGeometry(positions, particleCount);
+            modelDataRef.current.push(data);
           } catch (err) {
             console.error(`Failed to load ${url}:`, err);
             // Fallback to a simple shape if model fails to load
@@ -160,7 +230,7 @@ export const PointCloudMorph = () => {
             modelDataRef.current.push(fallbackData);
           }
         }
-        console.log(`Loaded ${modelDataRef.current.length} models.`);
+
         if (modelDataRef.current.length === 0) {
           throw new Error('No models loaded successfully');
         }
@@ -176,7 +246,7 @@ export const PointCloudMorph = () => {
         geometry.setAttribute('originalPosition', new THREE.BufferAttribute(firstModel.positions.slice(), 3));
 
         const material = new THREE.PointsMaterial({
-          size: 0.025,
+          size: 0.015,
           vertexColors: true,
           transparent: true,
           opacity: 0.8,
@@ -192,11 +262,87 @@ export const PointCloudMorph = () => {
         // Animation variables
         let morphProgress = 0;
         let ripplePhase = 0;
-        let rotationSpeed = 0.003;
         const morphDuration = 120;
         let frameCount = 0;
         const shapeChangeInterval = 300;
         let localCurrentShape = 0;
+
+        // Mouse interaction variables
+        let isDragging = false;
+        let previousMouseX = 0;
+        let previousMouseY = 0;
+        let rotationVelocityX = 0;
+        let rotationVelocityY = 0;
+        const damping = 0.95;
+
+        // Mouse event handlers
+        const handleMouseDown = (e) => {
+          isDragging = true;
+          previousMouseX = e.clientX;
+          previousMouseY = e.clientY;
+          rotationVelocityX = 0;
+          rotationVelocityY = 0;
+        };
+
+        const handleMouseMove = (e) => {
+          if (!isDragging) return;
+          
+          const deltaX = e.clientX - previousMouseX;
+          const deltaY = e.clientY - previousMouseY;
+          
+          rotationVelocityY = deltaX * 0.005;
+          rotationVelocityX = deltaY * 0.005;
+          
+          points.rotation.y += rotationVelocityY;
+          points.rotation.x += rotationVelocityX;
+          
+          previousMouseX = e.clientX;
+          previousMouseY = e.clientY;
+        };
+
+        const handleMouseUp = () => {
+          isDragging = false;
+        };
+
+        // Touch event handlers for mobile
+        const handleTouchStart = (e) => {
+          if (e.touches.length === 1) {
+            isDragging = true;
+            previousMouseX = e.touches[0].clientX;
+            previousMouseY = e.touches[0].clientY;
+            rotationVelocityX = 0;
+            rotationVelocityY = 0;
+          }
+        };
+
+        const handleTouchMove = (e) => {
+          if (!isDragging || e.touches.length !== 1) return;
+          e.preventDefault();
+          
+          const deltaX = e.touches[0].clientX - previousMouseX;
+          const deltaY = e.touches[0].clientY - previousMouseY;
+          
+          rotationVelocityY = deltaX * 0.005;
+          rotationVelocityX = deltaY * 0.005;
+          
+          points.rotation.y += rotationVelocityY;
+          points.rotation.x += rotationVelocityX;
+          
+          previousMouseX = e.touches[0].clientX;
+          previousMouseY = e.touches[0].clientY;
+        };
+
+        const handleTouchEnd = () => {
+          isDragging = false;
+        };
+
+        canvas.addEventListener('mousedown', handleMouseDown);
+        canvas.addEventListener('mousemove', handleMouseMove);
+        canvas.addEventListener('mouseup', handleMouseUp);
+        canvas.addEventListener('mouseleave', handleMouseUp);
+        canvas.addEventListener('touchstart', handleTouchStart, { passive: false });
+        canvas.addEventListener('touchmove', handleTouchMove, { passive: false });
+        canvas.addEventListener('touchend', handleTouchEnd);
 
         // Animation loop
         const animate = () => {
@@ -206,9 +352,13 @@ export const PointCloudMorph = () => {
           const targetPositions = geometry.attributes.targetPosition.array;
           const originalPositions = geometry.attributes.originalPosition.array;
 
-          // Rotation
-          points.rotation.y += rotationSpeed;
-          points.rotation.x += rotationSpeed * 0.3;
+          // Apply inertia when not dragging
+          if (!isDragging) {
+            points.rotation.y += rotationVelocityY;
+            points.rotation.x += rotationVelocityX;
+            rotationVelocityX *= damping;
+            rotationVelocityY *= damping;
+          }
 
           frameCount++;
 
@@ -351,4 +501,3 @@ export const PointCloudMorph = () => {
     </div>
   );
 };
-
