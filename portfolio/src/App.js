@@ -1,13 +1,12 @@
 import React, { useRef, useEffect, useState } from 'react';
 import * as THREE from 'three';
 
-export const PointCloudMorph = () => {
+export const MorphingGLBScene = () => {
   const canvasRef = useRef(null);
   const sceneRef = useRef(null);
   const cameraRef = useRef(null);
   const rendererRef = useRef(null);
-  const pointsRef = useRef(null);
-  const geometryRef = useRef(null);
+  const meshRef = useRef(null);
   const [currentShape, setCurrentShape] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -19,12 +18,11 @@ export const PointCloudMorph = () => {
       const response = await fetch(url);
       const arrayBuffer = await response.arrayBuffer();
       
-      // Parse GLB format
       const dataView = new DataView(arrayBuffer);
       
       // Check GLB magic number
       const magic = dataView.getUint32(0, true);
-      if (magic !== 0x46546C67) { // "glTF"
+      if (magic !== 0x46546C67) {
         throw new Error('Not a valid GLB file');
       }
       
@@ -32,7 +30,7 @@ export const PointCloudMorph = () => {
       const jsonChunkLength = dataView.getUint32(12, true);
       const jsonChunkType = dataView.getUint32(16, true);
       
-      if (jsonChunkType !== 0x4E4F534A) { // "JSON"
+      if (jsonChunkType !== 0x4E4F534A) {
         throw new Error('Invalid GLB format');
       }
       
@@ -43,8 +41,8 @@ export const PointCloudMorph = () => {
       const binaryChunkLength = dataView.getUint32(20 + jsonChunkLength, true);
       const binaryData = new Uint8Array(arrayBuffer, 28 + jsonChunkLength, binaryChunkLength);
       
-      // Extract mesh data
-      const positions = [];
+      // Extract all mesh data
+      const meshes = [];
       
       if (gltf.meshes && gltf.meshes.length > 0) {
         for (const mesh of gltf.meshes) {
@@ -52,49 +50,62 @@ export const PointCloudMorph = () => {
             const posAccessor = gltf.accessors[primitive.attributes.POSITION];
             const posBufferView = gltf.bufferViews[posAccessor.bufferView];
             
-            const componentType = posAccessor.componentType;
             const count = posAccessor.count;
             const byteOffset = (posBufferView.byteOffset || 0) + (posAccessor.byteOffset || 0);
             
-            // Read position data
-            const TypedArray = componentType === 5126 ? Float32Array : Float32Array;
-            const posData = new TypedArray(
+            const posData = new Float32Array(
               binaryData.buffer,
               binaryData.byteOffset + byteOffset,
               count * 3
             );
             
-            positions.push(...posData);
+            // Get indices if they exist
+            let indices = null;
+            if (primitive.indices !== undefined) {
+              const indAccessor = gltf.accessors[primitive.indices];
+              const indBufferView = gltf.bufferViews[indAccessor.bufferView];
+              const indByteOffset = (indBufferView.byteOffset || 0) + (indAccessor.byteOffset || 0);
+              
+              if (indAccessor.componentType === 5123) { // UNSIGNED_SHORT
+                indices = new Uint16Array(
+                  binaryData.buffer,
+                  binaryData.byteOffset + indByteOffset,
+                  indAccessor.count
+                );
+              } else if (indAccessor.componentType === 5125) { // UNSIGNED_INT
+                indices = new Uint32Array(
+                  binaryData.buffer,
+                  binaryData.byteOffset + indByteOffset,
+                  indAccessor.count
+                );
+              }
+            }
+            
+            meshes.push({ positions: posData, indices });
           }
         }
       }
       
-      return new Float32Array(positions);
+      return meshes;
     } catch (err) {
       console.error('Error loading GLB:', err);
       throw err;
     }
   };
 
-  // Sample points from mesh geometry - samples across triangle surfaces
-  const samplePointsFromGeometry = (positions, targetCount) => {
-    const vertexCount = positions.length / 3;
-    const triangleCount = Math.floor(vertexCount / 3);
-    const sampledPositions = new Float32Array(targetCount * 3);
-    const colors = new Float32Array(targetCount * 3);
-    
-    // Calculate bounds for centering
+  // Normalize and center geometry
+  const normalizeGeometry = (positions) => {
     let minX = Infinity, maxX = -Infinity;
     let minY = Infinity, maxY = -Infinity;
     let minZ = Infinity, maxZ = -Infinity;
     
-    for (let i = 0; i < vertexCount; i++) {
-      const x = positions[i * 3];
-      const y = positions[i * 3 + 1];
-      const z = positions[i * 3 + 2];
-      minX = Math.min(minX, x); maxX = Math.max(maxX, x);
-      minY = Math.min(minY, y); maxY = Math.max(maxY, y);
-      minZ = Math.min(minZ, z); maxZ = Math.max(maxZ, z);
+    for (let i = 0; i < positions.length; i += 3) {
+      minX = Math.min(minX, positions[i]);
+      maxX = Math.max(maxX, positions[i]);
+      minY = Math.min(minY, positions[i + 1]);
+      maxY = Math.max(maxY, positions[i + 1]);
+      minZ = Math.min(minZ, positions[i + 2]);
+      maxZ = Math.max(maxZ, positions[i + 2]);
     }
     
     const centerX = (minX + maxX) / 2;
@@ -102,80 +113,49 @@ export const PointCloudMorph = () => {
     const centerZ = (minZ + maxZ) / 2;
     const scale = Math.max(maxX - minX, maxY - minY, maxZ - minZ);
     
-    // Sample points across triangle surfaces using barycentric coordinates
-    for (let i = 0; i < targetCount; i++) {
-      // Pick a random triangle
-      const triangleIndex = Math.floor(Math.random() * triangleCount);
-      const v0Index = triangleIndex * 9; // 3 vertices * 3 components
-      
-      // Get the three vertices of the triangle
-      const v0x = positions[v0Index];
-      const v0y = positions[v0Index + 1];
-      const v0z = positions[v0Index + 2];
-      
-      const v1x = positions[v0Index + 3];
-      const v1y = positions[v0Index + 4];
-      const v1z = positions[v0Index + 5];
-      
-      const v2x = positions[v0Index + 6];
-      const v2y = positions[v0Index + 7];
-      const v2z = positions[v0Index + 8];
-      
-      // Generate random barycentric coordinates
-      let r1 = Math.random();
-      let r2 = Math.random();
-      
-      // Ensure point is inside triangle
-      if (r1 + r2 > 1) {
-        r1 = 1 - r1;
-        r2 = 1 - r2;
-      }
-      
-      const r3 = 1 - r1 - r2;
-      
-      // Interpolate position using barycentric coordinates
-      const x = v0x * r1 + v1x * r2 + v2x * r3;
-      const y = v0y * r1 + v1y * r2 + v2y * r3;
-      const z = v0z * r1 + v1z * r2 + v2z * r3;
-      
-      const i3 = i * 3;
-      
-      // Normalize and center
-      sampledPositions[i3] = ((x - centerX) / scale) * 2;
-      sampledPositions[i3 + 1] = ((y - centerY) / scale) * 2;
-      sampledPositions[i3 + 2] = ((z - centerZ) / scale) * 2;
-      
-      // Generate colors based on model index
-      const hue = (i / targetCount) * 360;
-      const rgb = hslToRgb(hue / 360, 0.8, 0.6);
-      colors[i3] = rgb[0];
-      colors[i3 + 1] = rgb[1];
-      colors[i3 + 2] = rgb[2];
+    const normalized = new Float32Array(positions.length);
+    for (let i = 0; i < positions.length; i += 3) {
+      normalized[i] = ((positions[i] - centerX) / scale) * 2;
+      normalized[i + 1] = ((positions[i + 1] - centerY) / scale) * 2;
+      normalized[i + 2] = ((positions[i + 2] - centerZ) / scale) * 2;
     }
     
-    return { positions: sampledPositions, colors };
+    return normalized;
   };
 
-  const hslToRgb = (h, s, l) => {
-    let r, g, b;
-    if (s === 0) {
-      r = g = b = l;
-    } else {
-      const hue2rgb = (p, q, t) => {
-        if (t < 0) t += 1;
-        if (t > 1) t -= 1;
-        if (t < 1/6) return p + (q - p) * 6 * t;
-        if (t < 1/2) return q;
-        if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
-        return p;
-      };
-      const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
-      const p = 2 * l - q;
-      r = hue2rgb(p, q, h + 1/3);
-      g = hue2rgb(p, q, h);
-      b = hue2rgb(p, q, h - 1/3);
-    }
-    return [r, g, b];
+  // Match vertex counts between models by interpolating
+  const matchVertexCounts = (models) => {
+    // Find the model with the most vertices
+    const maxVertices = Math.max(...models.map(m => m.positions.length / 3));
+    
+    return models.map(model => {
+      const currentCount = model.positions.length / 3;
+      
+      if (currentCount === maxVertices) {
+        return model;
+      }
+      
+      // Upsample to match max vertices
+      const newPositions = new Float32Array(maxVertices * 3);
+      
+      for (let i = 0; i < maxVertices; i++) {
+        // Map to original vertex using interpolation
+        const sourceIndex = (i / maxVertices) * currentCount;
+        const index0 = Math.floor(sourceIndex);
+        const index1 = Math.min(Math.ceil(sourceIndex), currentCount - 1);
+        const t = sourceIndex - index0;
+        
+        const i0 = index0 * 3;
+        const i1 = index1 * 3;
+        const ni = i * 3;
+        
+        newPositions[ni] = model.positions[i0] * (1 - t) + model.positions[i1] * t;
+        newPositions[ni + 1] = model.positions[i0 + 1] * (1 - t) + model.positions[i1 + 1] * t;
+        newPositions[ni + 2] = model.positions[i0 + 2] * (1 - t) + model.positions[i1 + 2] * t;
+      }
+      
+      return { ...model, positions: newPositions };
+    });
   };
 
   useEffect(() => {
@@ -183,7 +163,7 @@ export const PointCloudMorph = () => {
     if (!canvas) return;
 
     let animationId;
-    let scene, camera, renderer, points, geometry;
+    let scene, camera, renderer, mesh;
 
     const init = async () => {
       try {
@@ -208,6 +188,18 @@ export const PointCloudMorph = () => {
         renderer.setPixelRatio(window.devicePixelRatio);
         rendererRef.current = renderer;
 
+        // Add lighting
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+        scene.add(ambientLight);
+        
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        directionalLight.position.set(5, 5, 5);
+        scene.add(directionalLight);
+        
+        const directionalLight2 = new THREE.DirectionalLight(0x4444ff, 0.3);
+        directionalLight2.position.set(-5, -5, -5);
+        scene.add(directionalLight2);
+
         // Load GLB files - REPLACE THESE WITH YOUR FILE PATHS
         const glbUrls = [
           'assets/Dumbbell.glb',
@@ -215,47 +207,66 @@ export const PointCloudMorph = () => {
           'assets/Motorcycle.glb'
         ];
 
-        const particleCount = 50000;
-
         // Load all models
+        const loadedModels = [];
         for (const url of glbUrls) {
           try {
-            const positions = await loadGLB(url);
-            const data = samplePointsFromGeometry(positions, particleCount);
-            modelDataRef.current.push(data);
+            const meshes = await loadGLB(url);
+            // Combine all meshes from this model
+            let allPositions = [];
+            for (const meshData of meshes) {
+              if (meshData.indices) {
+                // Convert indexed geometry to non-indexed
+                for (let i = 0; i < meshData.indices.length; i++) {
+                  const idx = meshData.indices[i] * 3;
+                  allPositions.push(
+                    meshData.positions[idx],
+                    meshData.positions[idx + 1],
+                    meshData.positions[idx + 2]
+                  );
+                }
+              } else {
+                allPositions.push(...meshData.positions);
+              }
+            }
+            
+            const positions = new Float32Array(allPositions);
+            const normalized = normalizeGeometry(positions);
+            loadedModels.push({ positions: normalized });
           } catch (err) {
             console.error(`Failed to load ${url}:`, err);
-            // Fallback to a simple shape if model fails to load
-            const fallbackData = generateFallbackShape(particleCount);
-            modelDataRef.current.push(fallbackData);
+            // Fallback to a simple shape
+            const fallback = generateFallbackShape();
+            loadedModels.push({ positions: fallback });
           }
         }
 
-        if (modelDataRef.current.length === 0) {
+        if (loadedModels.length === 0) {
           throw new Error('No models loaded successfully');
         }
 
-        // Create point cloud with first model
-        geometry = new THREE.BufferGeometry();
-        geometryRef.current = geometry;
+        // Match vertex counts across all models
+        const matchedModels = matchVertexCounts(loadedModels);
+        modelDataRef.current = matchedModels;
 
-        const firstModel = modelDataRef.current[0];
-        geometry.setAttribute('position', new THREE.BufferAttribute(firstModel.positions.slice(), 3));
-        geometry.setAttribute('color', new THREE.BufferAttribute(firstModel.colors, 3));
-        geometry.setAttribute('targetPosition', new THREE.BufferAttribute(firstModel.positions.slice(), 3));
-        geometry.setAttribute('originalPosition', new THREE.BufferAttribute(firstModel.positions.slice(), 3));
+        // Create mesh with first model
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', new THREE.BufferAttribute(matchedModels[0].positions.slice(), 3));
+        geometry.setAttribute('targetPosition', new THREE.BufferAttribute(matchedModels[0].positions.slice(), 3));
+        geometry.setAttribute('originalPosition', new THREE.BufferAttribute(matchedModels[0].positions.slice(), 3));
+        geometry.computeVertexNormals();
 
-        const material = new THREE.PointsMaterial({
-          size: 0.015,
-          vertexColors: true,
-          transparent: true,
-          opacity: 0.8,
-          blending: THREE.AdditiveBlending
+        const material = new THREE.MeshStandardMaterial({
+          color: 0x4488ff,
+          metalness: 0.7,
+          roughness: 0.3,
+          flatShading: false,
+          side: THREE.DoubleSide
         });
 
-        points = new THREE.Points(geometry, material);
-        pointsRef.current = points;
-        scene.add(points);
+        mesh = new THREE.Mesh(geometry, material);
+        meshRef.current = mesh;
+        scene.add(mesh);
 
         setLoading(false);
 
@@ -293,8 +304,8 @@ export const PointCloudMorph = () => {
           rotationVelocityY = deltaX * 0.005;
           rotationVelocityX = deltaY * 0.005;
           
-          points.rotation.y += rotationVelocityY;
-          points.rotation.x += rotationVelocityX;
+          mesh.rotation.y += rotationVelocityY;
+          mesh.rotation.x += rotationVelocityX;
           
           previousMouseX = e.clientX;
           previousMouseY = e.clientY;
@@ -304,7 +315,6 @@ export const PointCloudMorph = () => {
           isDragging = false;
         };
 
-        // Touch event handlers for mobile
         const handleTouchStart = (e) => {
           if (e.touches.length === 1) {
             isDragging = true;
@@ -325,8 +335,8 @@ export const PointCloudMorph = () => {
           rotationVelocityY = deltaX * 0.005;
           rotationVelocityX = deltaY * 0.005;
           
-          points.rotation.y += rotationVelocityY;
-          points.rotation.x += rotationVelocityX;
+          mesh.rotation.y += rotationVelocityY;
+          mesh.rotation.x += rotationVelocityX;
           
           previousMouseX = e.touches[0].clientX;
           previousMouseY = e.touches[0].clientY;
@@ -348,14 +358,15 @@ export const PointCloudMorph = () => {
         const animate = () => {
           animationId = requestAnimationFrame(animate);
 
+          const geometry = mesh.geometry;
           const positions = geometry.attributes.position.array;
           const targetPositions = geometry.attributes.targetPosition.array;
           const originalPositions = geometry.attributes.originalPosition.array;
 
           // Apply inertia when not dragging
           if (!isDragging) {
-            points.rotation.y += rotationVelocityY;
-            points.rotation.x += rotationVelocityX;
+            mesh.rotation.y += rotationVelocityY;
+            mesh.rotation.x += rotationVelocityX;
             rotationVelocityX *= damping;
             rotationVelocityY *= damping;
           }
@@ -371,10 +382,6 @@ export const PointCloudMorph = () => {
             const nextModel = modelDataRef.current[localCurrentShape];
             geometry.attributes.targetPosition.array.set(nextModel.positions);
             geometry.attributes.originalPosition.array.set(positions);
-            
-            // Update colors
-            geometry.attributes.color.array.set(nextModel.colors);
-            geometry.attributes.color.needsUpdate = true;
           }
 
           // Morphing animation
@@ -390,6 +397,7 @@ export const PointCloudMorph = () => {
               positions[i + 2] = originalPositions[i + 2] + (targetPositions[i + 2] - originalPositions[i + 2]) * eased;
             }
             geometry.attributes.position.needsUpdate = true;
+            geometry.computeVertexNormals();
           }
 
           // Ripple effect
@@ -407,12 +415,24 @@ export const PointCloudMorph = () => {
               positions[i + 2] += z * ripple;
             }
             geometry.attributes.position.needsUpdate = true;
+            geometry.computeVertexNormals();
           }
 
           renderer.render(scene, camera);
         };
 
         animate();
+
+        // Cleanup event listeners
+        return () => {
+          canvas.removeEventListener('mousedown', handleMouseDown);
+          canvas.removeEventListener('mousemove', handleMouseMove);
+          canvas.removeEventListener('mouseup', handleMouseUp);
+          canvas.removeEventListener('mouseleave', handleMouseUp);
+          canvas.removeEventListener('touchstart', handleTouchStart);
+          canvas.removeEventListener('touchmove', handleTouchMove);
+          canvas.removeEventListener('touchend', handleTouchEnd);
+        };
 
       } catch (err) {
         console.error('Initialization error:', err);
@@ -422,29 +442,27 @@ export const PointCloudMorph = () => {
     };
 
     // Fallback shape generator
-    const generateFallbackShape = (count) => {
-      const positions = new Float32Array(count * 3);
-      const colors = new Float32Array(count * 3);
+    const generateFallbackShape = () => {
+      const positions = [];
+      const segments = 32;
       
-      for (let i = 0; i < count; i++) {
-        const i3 = i * 3;
-        const phi = Math.acos(-1 + (2 * i) / count);
-        const theta = Math.sqrt(count * Math.PI) * phi;
-        const radius = 1.5;
-        
-        positions[i3] = radius * Math.cos(theta) * Math.sin(phi);
-        positions[i3 + 1] = radius * Math.sin(theta) * Math.sin(phi);
-        positions[i3 + 2] = radius * Math.cos(phi);
-        
-        colors[i3] = 0.5 + Math.random() * 0.5;
-        colors[i3 + 1] = 0.5 + Math.random() * 0.5;
-        colors[i3 + 2] = 0.5 + Math.random() * 0.5;
+      for (let i = 0; i <= segments; i++) {
+        for (let j = 0; j <= segments; j++) {
+          const u = (i / segments) * Math.PI * 2;
+          const v = (j / segments) * Math.PI;
+          
+          const x = Math.sin(v) * Math.cos(u) * 1.5;
+          const y = Math.sin(v) * Math.sin(u) * 1.5;
+          const z = Math.cos(v) * 1.5;
+          
+          positions.push(x, y, z);
+        }
       }
       
-      return { positions, colors };
+      return new Float32Array(positions);
     };
 
-    init();
+    const cleanup = init();
 
     // Handle resize
     const handleResize = () => {
@@ -461,9 +479,10 @@ export const PointCloudMorph = () => {
     return () => {
       window.removeEventListener('resize', handleResize);
       if (animationId) cancelAnimationFrame(animationId);
-      if (geometry) geometry.dispose();
-      if (points && points.material) points.material.dispose();
+      if (mesh && mesh.geometry) mesh.geometry.dispose();
+      if (mesh && mesh.material) mesh.material.dispose();
       if (renderer) renderer.dispose();
+      cleanup?.then(fn => fn?.());
     };
   }, []);
 
@@ -490,7 +509,7 @@ export const PointCloudMorph = () => {
       )}
       <canvas
         ref={canvasRef}
-        className="w-full h-full"
+        className="w-full h-full cursor-grab active:cursor-grabbing"
         style={{ display: 'block' }}
       />
       {!loading && (
@@ -501,3 +520,4 @@ export const PointCloudMorph = () => {
     </div>
   );
 };
+
