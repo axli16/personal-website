@@ -123,39 +123,50 @@ export const MorphingGLBScene = () => {
     return normalized;
   };
 
-  // Match vertex counts between models by interpolating
-  const matchVertexCounts = (models) => {
-    // Find the model with the most vertices
-    const maxVertices = Math.max(...models.map(m => m.positions.length / 3));
+  // Create a morphed geometry that interpolates vertex counts
+  const createMorphGeometry = (fromPositions, toPositions, progress) => {
+    const fromCount = fromPositions.length / 3;
+    const toCount = toPositions.length / 3;
     
-    return models.map(model => {
-      const currentCount = model.positions.length / 3;
+    // Determine current vertex count based on progress
+    const currentCount = Math.round(fromCount + (toCount - fromCount) * progress);
+    const positions = new Float32Array(currentCount * 3);
+    
+    for (let i = 0; i < currentCount; i++) {
+      const t = i / (currentCount - 1);
       
-      if (currentCount === maxVertices) {
-        return model;
-      }
+      // Map to source vertex
+      const fromIndex = Math.min(Math.floor(t * (fromCount - 1)), fromCount - 1);
+      const fromIndex2 = Math.min(fromIndex + 1, fromCount - 1);
+      const fromT = (t * (fromCount - 1)) - fromIndex;
       
-      // Upsample to match max vertices
-      const newPositions = new Float32Array(maxVertices * 3);
+      const fromI = fromIndex * 3;
+      const fromI2 = fromIndex2 * 3;
       
-      for (let i = 0; i < maxVertices; i++) {
-        // Map to original vertex using interpolation
-        const sourceIndex = (i / maxVertices) * currentCount;
-        const index0 = Math.floor(sourceIndex);
-        const index1 = Math.min(Math.ceil(sourceIndex), currentCount - 1);
-        const t = sourceIndex - index0;
-        
-        const i0 = index0 * 3;
-        const i1 = index1 * 3;
-        const ni = i * 3;
-        
-        newPositions[ni] = model.positions[i0] * (1 - t) + model.positions[i1] * t;
-        newPositions[ni + 1] = model.positions[i0 + 1] * (1 - t) + model.positions[i1 + 1] * t;
-        newPositions[ni + 2] = model.positions[i0 + 2] * (1 - t) + model.positions[i1 + 2] * t;
-      }
+      const fromX = fromPositions[fromI] * (1 - fromT) + fromPositions[fromI2] * fromT;
+      const fromY = fromPositions[fromI + 1] * (1 - fromT) + fromPositions[fromI2 + 1] * fromT;
+      const fromZ = fromPositions[fromI + 2] * (1 - fromT) + fromPositions[fromI2 + 2] * fromT;
       
-      return { ...model, positions: newPositions };
-    });
+      // Map to target vertex
+      const toIndex = Math.min(Math.floor(t * (toCount - 1)), toCount - 1);
+      const toIndex2 = Math.min(toIndex + 1, toCount - 1);
+      const toT = (t * (toCount - 1)) - toIndex;
+      
+      const toI = toIndex * 3;
+      const toI2 = toIndex2 * 3;
+      
+      const toX = toPositions[toI] * (1 - toT) + toPositions[toI2] * toT;
+      const toY = toPositions[toI + 1] * (1 - toT) + toPositions[toI2 + 1] * toT;
+      const toZ = toPositions[toI + 2] * (1 - toT) + toPositions[toI2 + 2] * toT;
+      
+      // Interpolate between from and to
+      const i3 = i * 3;
+      positions[i3] = fromX * (1 - progress) + toX * progress;
+      positions[i3 + 1] = fromY * (1 - progress) + toY * progress;
+      positions[i3 + 2] = fromZ * (1 - progress) + toZ * progress;
+    }
+    
+    return positions;
   };
 
   useEffect(() => {
@@ -202,7 +213,7 @@ export const MorphingGLBScene = () => {
 
         // Load GLB files - REPLACE THESE WITH YOUR FILE PATHS
         const glbUrls = [
-          'assets/Dumbbell.glb',
+          'assets/Pagoda.glb',
           'assets/computer.glb',
           'assets/Motorcycle.glb'
         ];
@@ -245,15 +256,11 @@ export const MorphingGLBScene = () => {
           throw new Error('No models loaded successfully');
         }
 
-        // Match vertex counts across all models
-        const matchedModels = matchVertexCounts(loadedModels);
-        modelDataRef.current = matchedModels;
+        modelDataRef.current = loadedModels;
 
         // Create mesh with first model
         const geometry = new THREE.BufferGeometry();
-        geometry.setAttribute('position', new THREE.BufferAttribute(matchedModels[0].positions.slice(), 3));
-        geometry.setAttribute('targetPosition', new THREE.BufferAttribute(matchedModels[0].positions.slice(), 3));
-        geometry.setAttribute('originalPosition', new THREE.BufferAttribute(matchedModels[0].positions.slice(), 3));
+        geometry.setAttribute('position', new THREE.BufferAttribute(loadedModels[0].positions.slice(), 3));
         geometry.computeVertexNormals();
 
         const material = new THREE.MeshStandardMaterial({
@@ -277,6 +284,8 @@ export const MorphingGLBScene = () => {
         let frameCount = 0;
         const shapeChangeInterval = 300;
         let localCurrentShape = 0;
+        let nextShape = 0;
+        let isMorphing = false;
 
         // Mouse interaction variables
         let isDragging = false;
@@ -358,11 +367,6 @@ export const MorphingGLBScene = () => {
         const animate = () => {
           animationId = requestAnimationFrame(animate);
 
-          const geometry = mesh.geometry;
-          const positions = geometry.attributes.position.array;
-          const targetPositions = geometry.attributes.targetPosition.array;
-          const originalPositions = geometry.attributes.originalPosition.array;
-
           // Apply inertia when not dragging
           if (!isDragging) {
             mesh.rotation.y += rotationVelocityY;
@@ -374,48 +378,59 @@ export const MorphingGLBScene = () => {
           frameCount++;
 
           // Trigger morph
-          if (frameCount % shapeChangeInterval === 0 && modelDataRef.current.length > 0) {
+          if (frameCount % shapeChangeInterval === 0 && modelDataRef.current.length > 1) {
             morphProgress = 0;
-            localCurrentShape = (localCurrentShape + 1) % modelDataRef.current.length;
-            setCurrentShape(localCurrentShape);
-            
-            const nextModel = modelDataRef.current[localCurrentShape];
-            geometry.attributes.targetPosition.array.set(nextModel.positions);
-            geometry.attributes.originalPosition.array.set(positions);
+            isMorphing = true;
+            nextShape = (localCurrentShape + 1) % modelDataRef.current.length;
+            setCurrentShape(nextShape);
           }
 
-          // Morphing animation
-          if (morphProgress < 1) {
+          // Morphing animation with dynamic vertex count
+          if (isMorphing && morphProgress < 1) {
             morphProgress += 1 / morphDuration;
             const eased = morphProgress < 0.5
               ? 2 * morphProgress * morphProgress
               : 1 - Math.pow(-2 * morphProgress + 2, 2) / 2;
 
-            for (let i = 0; i < positions.length; i += 3) {
-              positions[i] = originalPositions[i] + (targetPositions[i] - originalPositions[i]) * eased;
-              positions[i + 1] = originalPositions[i + 1] + (targetPositions[i + 1] - originalPositions[i + 1]) * eased;
-              positions[i + 2] = originalPositions[i + 2] + (targetPositions[i + 2] - originalPositions[i + 2]) * eased;
-            }
-            geometry.attributes.position.needsUpdate = true;
-            geometry.computeVertexNormals();
-          }
+            const fromModel = modelDataRef.current[localCurrentShape];
+            const toModel = modelDataRef.current[nextShape];
+            
+            // Create morphed positions with interpolated vertex count
+            const morphedPositions = createMorphGeometry(
+              fromModel.positions,
+              toModel.positions,
+              eased
+            );
 
-          // Ripple effect
-          ripplePhase += 0.05;
-          if (morphProgress > 0 && morphProgress < 1) {
-            for (let i = 0; i < positions.length; i += 3) {
-              const x = positions[i];
-              const y = positions[i + 1];
-              const z = positions[i + 2];
+            // Apply ripple effect
+            ripplePhase += 0.05;
+            const rippleMagnitude = Math.sin(morphProgress * Math.PI) * 0.05;
+            
+            for (let i = 0; i < morphedPositions.length; i += 3) {
+              const x = morphedPositions[i];
+              const y = morphedPositions[i + 1];
+              const z = morphedPositions[i + 2];
               const dist = Math.sqrt(x * x + y * y + z * z);
-              const ripple = Math.sin(dist * 5 - ripplePhase * 3) * 0.05 * (1 - morphProgress);
+              const ripple = Math.sin(dist * 5 - ripplePhase * 3) * rippleMagnitude;
               
-              positions[i] += x * ripple;
-              positions[i + 1] += y * ripple;
-              positions[i + 2] += z * ripple;
+              morphedPositions[i] = x * (1 + ripple);
+              morphedPositions[i + 1] = y * (1 + ripple);
+              morphedPositions[i + 2] = z * (1 + ripple);
             }
-            geometry.attributes.position.needsUpdate = true;
-            geometry.computeVertexNormals();
+
+            // Update geometry
+            const newGeometry = new THREE.BufferGeometry();
+            newGeometry.setAttribute('position', new THREE.BufferAttribute(morphedPositions, 3));
+            newGeometry.computeVertexNormals();
+            
+            // Replace geometry
+            mesh.geometry.dispose();
+            mesh.geometry = newGeometry;
+
+            if (morphProgress >= 1) {
+              isMorphing = false;
+              localCurrentShape = nextShape;
+            }
           }
 
           renderer.render(scene, camera);
@@ -520,4 +535,3 @@ export const MorphingGLBScene = () => {
     </div>
   );
 };
-
