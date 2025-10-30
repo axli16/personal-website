@@ -174,7 +174,7 @@ export const MorphingGLBScene = () => {
       try {
         // Setup scene
         scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x0a0a0a);
+        scene.background = new THREE.Color(0xffffff);
         sceneRef.current = scene;
 
         // Setup camera
@@ -184,7 +184,7 @@ export const MorphingGLBScene = () => {
           0.1,
           1000
         );
-        camera.position.z = 5;
+        camera.position.z = 3;
         cameraRef.current = camera;
 
         // Setup renderer
@@ -194,21 +194,33 @@ export const MorphingGLBScene = () => {
         rendererRef.current = renderer;
 
         // Add lighting
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
         scene.add(ambientLight);
         
         const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
         directionalLight.position.set(5, 5, 5);
         scene.add(directionalLight);
         
-        const directionalLight2 = new THREE.DirectionalLight(0x4444ff, 0.3);
+        const directionalLight2 = new THREE.DirectionalLight(0xcccccc, 0.4);
         directionalLight2.position.set(-5, -5, -5);
         scene.add(directionalLight2);
+
+        // Create background sphere with wireframe triangles
+        const sphereGeometry = new THREE.SphereGeometry(15, 32, 32);
+        const sphereMaterial = new THREE.MeshBasicMaterial({
+          color: 0x333333,
+          wireframe: true,
+          transparent: true,
+          opacity: 0.3,
+          side: THREE.BackSide
+        });
+        const backgroundSphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
+        scene.add(backgroundSphere);
 
         // Load GLB files - REPLACE THESE WITH YOUR FILE PATHS
         const glbUrls = [
           'assets/Pagoda.glb',
-          'assets/Dumbbell.glb',
+          'assets/Torii.glb',
           'assets/Motorcycle.glb'
         ];
 
@@ -262,7 +274,7 @@ export const MorphingGLBScene = () => {
         geometry.computeVertexNormals();
 
         const material = new THREE.MeshStandardMaterial({
-          color: 0x4488ff,
+          color: 0x333333,
           metalness: 0.7,
           roughness: 0.3,
           flatShading: false,
@@ -283,6 +295,7 @@ export const MorphingGLBScene = () => {
         const shapeChangeInterval = 300;
         let localCurrentShape = 0;
         let isMorphing = false;
+        const constantRotationSpeed = 0.003;
 
         // Mouse interaction variables
         let isDragging = false;
@@ -369,13 +382,21 @@ export const MorphingGLBScene = () => {
           const targetPositions = geometry.attributes.targetPosition.array;
           const originalPositions = geometry.attributes.originalPosition.array;
 
-          // Apply inertia when not dragging
+          // Constant rotation for the model
+          mesh.rotation.y += constantRotationSpeed;
+          // mesh.rotation.x += constantRotationSpeed * 0.5;
+
+          // Apply inertia from dragging on top of constant rotation
           if (!isDragging) {
             mesh.rotation.y += rotationVelocityY;
             mesh.rotation.x += rotationVelocityX;
             rotationVelocityX *= damping;
             rotationVelocityY *= damping;
           }
+
+          // Rotate background sphere in opposite direction
+          backgroundSphere.rotation.y -= constantRotationSpeed * 0.2;
+          backgroundSphere.rotation.x -= constantRotationSpeed * 0.1;
 
           frameCount++;
 
@@ -514,9 +535,9 @@ export const MorphingGLBScene = () => {
   }
 
   return (
-    <div className="w-full h-screen bg-black flex items-center justify-center overflow-hidden">
+    <div className="w-full h-screen bg-white flex items-center justify-center overflow-hidden">
       {loading && (
-        <div className="absolute z-10 text-white text-xl font-mono">
+        <div className="absolute z-10 text-gray-800 text-xl font-mono">
           Loading models...
         </div>
       )}
@@ -526,7 +547,7 @@ export const MorphingGLBScene = () => {
         style={{ display: 'block' }}
       />
       {!loading && (
-        <div className="absolute bottom-8 left-8 text-white font-mono text-sm opacity-50">
+        <div className="absolute bottom-8 left-8 text-gray-800 font-mono text-sm opacity-50">
           MODEL {currentShape + 1} / {modelDataRef.current.length}
         </div>
       )}
