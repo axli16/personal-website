@@ -206,22 +206,108 @@ export const MorphingGLBScene = () => {
         scene.add(directionalLight2);
 
         // Create background sphere with wireframe triangles
-        const sphereGeometry = new THREE.SphereGeometry(15, 32, 32);
-        const sphereMaterial = new THREE.MeshBasicMaterial({
-          color: 0x333333,
-          wireframe: true,
-          transparent: true,
-          opacity: 0.3,
-          side: THREE.BackSide
-        });
-        const backgroundSphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
-        scene.add(backgroundSphere);
+        // const sphereGeometry = new THREE.SphereGeometry(15, 32, 32);
+        // const sphereMaterial = new THREE.MeshBasicMaterial({
+        //   color: 0xffffff,
+        //   wireframe: true,
+        //   transparent: true,
+        //   opacity: 0.3,
+        //   side: THREE.BackSide
+        // });
+        // const backgroundSphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
+        // scene.add(backgroundSphere);
 
+
+         // Create shattered glass prism background
+        const glassShards = [];
+        const shardCount = 15;
+        
+        for (let i = 0; i < shardCount; i++) {
+          // Create random triangular shard
+          const size = Math.random() * 2 + 1;
+          const shardGeometry = new THREE.BufferGeometry();
+          
+          // Create a random triangle
+          const vertices = new Float32Array([
+            Math.random() - 0.5, Math.random() - 0.5, 0,
+            Math.random() - 0.5, Math.random() + 0.5, 0,
+            Math.random() + 0.5, Math.random() - 0.5, 0
+          ]);
+          
+          shardGeometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+          shardGeometry.computeVertexNormals();
+          
+          // Glass material with reflective/refractive properties
+          const glassMaterial = new THREE.MeshPhysicalMaterial({
+            color: 0xffffff,
+            metalness: 0.1,
+            roughness: 0.05,
+            transparent: true,
+            opacity: 0.4,
+            transmission: 0.9,
+            thickness: 0.5,
+            envMapIntensity: 1,
+            side: THREE.DoubleSide,
+            reflectivity: 0.8
+          });
+          
+          const shard = new THREE.Mesh(shardGeometry, glassMaterial);
+          
+          // Random position in sphere around scene
+          const fov = THREE.MathUtils.degToRad(camera.fov); // vertical FOV in radians
+          const aspect = camera.aspect;
+          const halfFovH = fov / 2;
+          const halfFovV = Math.atan(Math.tan(halfFovH) * aspect);
+
+          // Random direction within the frustum cone
+          const theta = (Math.random() - 0.5) * 2 * halfFovV; // horizontal angle
+          const phi = (Math.random() - 0.5) * halfFovH;       // vertical angle
+          const radius = 8 + Math.random() * 7;
+
+          // Convert spherical to Cartesian (assuming camera looks along -Z)
+          const x = radius * Math.tan(theta);
+          const y = radius * Math.tan(phi);
+          const z = -radius; // in front of camera
+          shard.position.set(x, y, z);
+
+          // // Random rotation
+          // shard.rotation.x = Math.random() * Math.PI;
+          // shard.rotation.y = Math.random() * Math.PI;
+          // shard.rotation.z = Math.random() * Math.PI;
+          
+          // Random scale
+          const scale = size;
+          shard.scale.set(scale, scale, scale);
+          
+          // Store rotation speeds for animation
+          // shard.userData.rotationSpeed = {
+          //   x: (Math.random() - 0.5) * 0.02,
+          //   y: (Math.random() - 0.5) * 0.02,
+          //   z: (Math.random() - 0.5) * 0.02
+          // };
+          
+          // // Store drift speed
+          // shard.userData.driftSpeed = {
+          //   x: (Math.random() - 0.5) * 0.01,
+          //   y: (Math.random() - 0.5) * 0.01,
+          //   z: (Math.random() - 0.5) * 0.01
+          // };
+          
+          // shard.userData.originalPosition = {
+          //   x: shard.position.x,
+          //   y: shard.position.y,
+          //   z: shard.position.z
+          // };
+          
+          scene.add(shard);
+          glassShards.push(shard);
+        }
         // Load GLB files - REPLACE THESE WITH YOUR FILE PATHS
         const glbUrls = [
-          'assets/Pagoda.glb',
+          'assets/Temple.glb',
           'assets/Torii.glb',
-          'assets/Motorcycle.glb'
+          'assets/Motorcycle.glb',
+          // 'assets/Scroll.glb'
         ];
 
         // Load all models
@@ -282,6 +368,7 @@ export const MorphingGLBScene = () => {
         });
 
         mesh = new THREE.Mesh(geometry, material);
+        mesh.rotateX(0.3)
         meshRef.current = mesh;
         scene.add(mesh);
 
@@ -395,8 +482,8 @@ export const MorphingGLBScene = () => {
           }
 
           // Rotate background sphere in opposite direction
-          backgroundSphere.rotation.y -= constantRotationSpeed * 0.2;
-          backgroundSphere.rotation.x -= constantRotationSpeed * 0.1;
+          // backgroundSphere.rotation.y -= constantRotationSpeed * 0.2;
+          // backgroundSphere.rotation.x -= constantRotationSpeed * 0.1;
 
           frameCount++;
 
