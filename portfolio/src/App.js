@@ -10,7 +10,19 @@ export const MorphingGLBScene = () => {
   const [currentShape, setCurrentShape] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const viewModeRef = useRef('objects');
+  const [currentViewMode, setCurrentViewMode] = useState('objects');
   const modelDataRef = useRef([]);
+  const scrollModelRef = useRef(null);
+  const iconModelsRef = useRef([]);
+  const textMeshRef = useRef(null);
+  const [textMeshes, setTextMeshes] = useState([]);
+  const textIndex = useRef(0);
+  const textMap = {
+    'about': 0,
+    'CV': 1,
+    'projects': 2
+  };
 
   // GLTFLoader equivalent using fetch and manual parsing
   const loadGLB = async (url) => {
@@ -94,7 +106,7 @@ export const MorphingGLBScene = () => {
   };
 
   // Normalize and center geometry
-  const normalizeGeometry = (positions) => {
+  const normalizeGeometry = (positions, size) => {
     let minX = Infinity, maxX = -Infinity;
     let minY = Infinity, maxY = -Infinity;
     let minZ = Infinity, maxZ = -Infinity;
@@ -115,9 +127,9 @@ export const MorphingGLBScene = () => {
     
     const normalized = new Float32Array(positions.length);
     for (let i = 0; i < positions.length; i += 3) {
-      normalized[i] = ((positions[i] - centerX) / scale) * 2;
-      normalized[i + 1] = ((positions[i + 1] - centerY) / scale) * 2;
-      normalized[i + 2] = ((positions[i + 2] - centerZ) / scale) * 2;
+      normalized[i] = ((positions[i] - centerX) / scale) * size;
+      normalized[i + 1] = ((positions[i + 1] - centerY) / scale) * size;
+      normalized[i + 2] = ((positions[i + 2] - centerZ) / scale) * size;
     }
     
     return normalized;
@@ -174,7 +186,7 @@ export const MorphingGLBScene = () => {
       try {
         // Setup scene
         scene = new THREE.Scene();
-        scene.background = new THREE.Color(0xffffff);
+        scene.background = new THREE.Color(0x000000);
         sceneRef.current = scene;
 
         // Setup camera
@@ -205,110 +217,86 @@ export const MorphingGLBScene = () => {
         directionalLight2.position.set(-5, -5, -5);
         scene.add(directionalLight2);
 
-        // Create background sphere with wireframe triangles
-        // const sphereGeometry = new THREE.SphereGeometry(15, 32, 32);
-        // const sphereMaterial = new THREE.MeshBasicMaterial({
-        //   color: 0xffffff,
-        //   wireframe: true,
-        //   transparent: true,
-        //   opacity: 0.3,
-        //   side: THREE.BackSide
-        // });
-        // const backgroundSphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
-        // scene.add(backgroundSphere);
-
-
-         // Create shattered glass prism background
-        const glassShards = [];
-        const shardCount = 15;
+        // Create floating glass shards - mirror dimension effect
+        const shardGroup = new THREE.Group();
+        const shardCount = 20;
+        const shardGeometries = [];
+        const shardMeshes = [];
         
         for (let i = 0; i < shardCount; i++) {
-          // Create random triangular shard
-          const size = Math.random() * 2 + 1;
-          const shardGeometry = new THREE.BufferGeometry();
-          
-          // Create a random triangle
+          // Create irregular triangular shard
+          const size = Math.random() * 0.8 + 0.3;
           const vertices = new Float32Array([
-            Math.random() - 0.5, Math.random() - 0.5, 0,
-            Math.random() - 0.5, Math.random() + 0.5, 0,
-            Math.random() + 0.5, Math.random() - 0.5, 0
+            // Triangle with slight irregularity
+            0, size, 0,
+            -size * 0.8 + Math.random() * 0.2, -size * 0.6, Math.random() * 0.2,
+            size * 0.8 + Math.random() * 0.2, -size * 0.5, Math.random() * 0.2
           ]);
           
+          const shardGeometry = new THREE.BufferGeometry();
           shardGeometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
           shardGeometry.computeVertexNormals();
           
-          // Glass material with reflective/refractive properties
-          const glassMaterial = new THREE.MeshPhysicalMaterial({
-            color: 0xffffff,
+          // Glass-like material with reflections
+          const shardMaterial = new THREE.MeshPhysicalMaterial({
+            color: 0xF9F6EE,
             metalness: 0.1,
             roughness: 0.05,
-            transparent: true,
-            opacity: 0.4,
             transmission: 0.9,
             thickness: 0.5,
-            envMapIntensity: 1,
+            transparent: true,
+            opacity: 0.4,
             side: THREE.DoubleSide,
-            reflectivity: 0.8
+            envMapIntensity: 1,
+            clearcoat: 1,
+            clearcoatRoughness: 0.1
           });
           
-          const shard = new THREE.Mesh(shardGeometry, glassMaterial);
+          const shard = new THREE.Mesh(shardGeometry, shardMaterial);
           
-          // Random position in sphere around scene
-          const fov = THREE.MathUtils.degToRad(camera.fov); // vertical FOV in radians
-          const aspect = camera.aspect;
-          const halfFovH = fov / 2;
-          const halfFovV = Math.atan(Math.tan(halfFovH) * aspect);
-
-          // Random direction within the frustum cone
-          const theta = (Math.random() - 0.5) * 2 * halfFovV; // horizontal angle
-          const phi = (Math.random() - 0.5) * halfFovH;       // vertical angle
+          // Random position in a sphere around the scene
           const radius = 8 + Math.random() * 7;
-
-          // Convert spherical to Cartesian (assuming camera looks along -Z)
-          const x = radius * Math.tan(theta);
-          const y = radius * Math.tan(phi);
-          const z = -radius; // in front of camera
-          shard.position.set(x, y, z);
-
-          // // Random rotation
-          // shard.rotation.x = Math.random() * Math.PI;
-          // shard.rotation.y = Math.random() * Math.PI;
-          // shard.rotation.z = Math.random() * Math.PI;
+          const theta = Math.random() * Math.PI * 2;
+          const phi = Math.random() * Math.PI / 2;
           
-          // Random scale
-          const scale = size;
-          shard.scale.set(scale, scale, scale);
+          shard.position.x = radius * Math.sin(phi) * Math.cos(theta);
+          shard.position.y = radius * Math.sin(phi) * Math.sin(theta);
+          shard.position.z = -Math.abs(radius * Math.cos(phi));
           
-          // Store rotation speeds for animation
-          // shard.userData.rotationSpeed = {
-          //   x: (Math.random() - 0.5) * 0.02,
-          //   y: (Math.random() - 0.5) * 0.02,
-          //   z: (Math.random() - 0.5) * 0.02
-          // };
+          // Random rotation
+          shard.rotation.x = Math.random() * Math.PI * 2;
+          shard.rotation.y = Math.random() * Math.PI * 2;
+          shard.rotation.z = Math.random() * Math.PI * 2;
           
-          // // Store drift speed
-          // shard.userData.driftSpeed = {
-          //   x: (Math.random() - 0.5) * 0.01,
-          //   y: (Math.random() - 0.5) * 0.01,
-          //   z: (Math.random() - 0.5) * 0.01
-          // };
+          // Store rotation speed for animation
+          shard.userData.rotationSpeed = {
+            x: (Math.random() - 0.5) * 0.01,
+            y: (Math.random() - 0.5) * 0.01,
+            z: (Math.random() - 0.5) * 0.01
+          };
           
-          // shard.userData.originalPosition = {
-          //   x: shard.position.x,
-          //   y: shard.position.y,
-          //   z: shard.position.z
-          // };
-          
-          scene.add(shard);
-          glassShards.push(shard);
+          shardGroup.add(shard);
+          shardMeshes.push(shard);
         }
+        
+        scene.add(shardGroup);
+
         // Load GLB files - REPLACE THESE WITH YOUR FILE PATHS
         const glbUrls = [
           'assets/Temple.glb',
           'assets/Torii.glb',
-          'assets/Motorcycle.glb',
-          // 'assets/Scroll.glb'
+          'assets/Motorcycle.glb'
         ];
+
+        const scrollUrl = 'assets/Parchment.glb';
+        
+        // Icon URLs - replace with your icon GLB files
+        // const iconUrls = {
+        //   mail: 'path/to/mail-icon.glb',
+        //   phone: 'path/to/phone-icon.glb',
+        //   linkedin: 'path/to/linkedin-icon.glb',
+        //   github: 'path/to/github-icon.glb'
+        // };
 
         // Load all models
         const loadedModels = [];
@@ -334,7 +322,7 @@ export const MorphingGLBScene = () => {
             }
             
             const positions = new Float32Array(allPositions);
-            const normalized = normalizeGeometry(positions);
+            const normalized = normalizeGeometry(positions, 2.5);
             loadedModels.push({ positions: normalized });
           } catch (err) {
             console.error(`Failed to load ${url}:`, err);
@@ -349,8 +337,69 @@ export const MorphingGLBScene = () => {
         }
 
         // Expand all models to have the same vertex count (max)
+        // const expandedModels = expandToMaxVertices(loadedModels);
+        // modelDataRef.current = expandedModels;
+
+        // Load scroll model
+        try {
+          const scrollMeshes = await loadGLB(scrollUrl);
+          let scrollPositions = [];
+          for (const meshData of scrollMeshes) {
+            if (meshData.indices) {
+              for (let i = 0; i < meshData.indices.length; i++) {
+                const idx = meshData.indices[i] * 3;
+                scrollPositions.push(
+                  meshData.positions[idx],
+                  meshData.positions[idx + 1],
+                  meshData.positions[idx + 2]
+                );
+              }
+            } else {
+              scrollPositions.push(...meshData.positions);
+            }
+          }
+          const normalizedScroll = normalizeGeometry(new Float32Array(scrollPositions), 3.5);
+          scrollModelRef.current = { positions: normalizedScroll };
+        } catch (err) {
+          console.error('Failed to load scroll:', err);
+        }
+        
+        // 3️⃣ Expand everything at once (scroll included)
+        loadedModels.push(scrollModelRef.current);
         const expandedModels = expandToMaxVertices(loadedModels);
-        modelDataRef.current = expandedModels;
+
+        // 4️⃣ Store separately if needed
+        modelDataRef.current = expandedModels.slice(0, -1); // all but scroll 
+        scrollModelRef.current = expandedModels[expandedModels.length - 1];
+
+        // Load icon models
+        // try {
+        //   for (const [key, url] of Object.entries(iconUrls)) {
+        //     const iconMeshes = await loadGLB(url);
+        //     let iconPositions = [];
+        //     for (const meshData of iconMeshes) {
+        //       if (meshData.indices) {
+        //         for (let i = 0; i < meshData.indices.length; i++) {
+        //           const idx = meshData.indices[i] * 3;
+        //           iconPositions.push(
+        //             meshData.positions[idx],
+        //             meshData.positions[idx + 1],
+        //             meshData.positions[idx + 2]
+        //           );
+        //         }
+        //       } else {
+        //         iconPositions.push(...meshData.positions);
+        //       }
+        //     }
+        //     const normalizedIcon = normalizeGeometry(new Float32Array(iconPositions));
+        //     iconModelsRef.current.push({ 
+        //       name: key, 
+        //       positions: normalizedIcon 
+        //     });
+        //   }
+        // } catch (err) {
+        //   console.error('Failed to load icons:', err);
+        // }
 
         // Create mesh with first model
         const geometry = new THREE.BufferGeometry();
@@ -360,7 +409,7 @@ export const MorphingGLBScene = () => {
         geometry.computeVertexNormals();
 
         const material = new THREE.MeshStandardMaterial({
-          color: 0x333333,
+          color: 0xC0C0C0,
           metalness: 0.7,
           roughness: 0.3,
           flatShading: false,
@@ -368,11 +417,109 @@ export const MorphingGLBScene = () => {
         });
 
         mesh = new THREE.Mesh(geometry, material);
-        mesh.rotateX(0.3)
+        mesh.userData.baseRotation = { x: 0, y: 0 }; // Track rotation for scroll mode
         meshRef.current = mesh;
+        mesh.rotateX(0.2);
         scene.add(mesh);
+        
+        // Create 3D text for scroll view
+        const createTextMesh = (lines) => {
+          const canvas = document.createElement('canvas');
+          const context = canvas.getContext('2d');
+          canvas.width = 1024;
+          canvas.height = 1024;
+          
+          context.fillStyle = 'transparent';
+          context.fillRect(0, 0, canvas.width, canvas.height);
+          
+          context.font = 'bold 40px Roboto Mono';
+          context.fillStyle = 'white';
+          context.textAlign = 'center';
+          context.textBaseline = 'middle';
+          
+          
+          const lineHeight = 50;
+          const startY = canvas.height / 2 - (lines.length * lineHeight) / 2;
+          
+          lines.forEach((line, i) => {
+            context.fillText(line, canvas.width / 2, startY + i * lineHeight);
+          });
+          
+          const texture = new THREE.CanvasTexture(canvas);
+          texture.needsUpdate = true;
+          
+          const textGeometry = new THREE.PlaneGeometry(2.5, 2.5);
+          const textMaterial = new THREE.MeshBasicMaterial({
+            map: texture,
+            transparent: true,
+            depthTest: false, 
+            depthWrite: false,
+            opacity: 0,
+            side: THREE.DoubleSide
+          });
+          
+          const textMesh = new THREE.Mesh(textGeometry, textMaterial);
+          textMesh.position.z = 0.1; // Slightly in front
+          textMeshRef.current = textMesh;
+          scene.add(textMesh);
+          return textMesh;
+        };
 
-        setLoading(false);
+        let textMeshes = [];
+        let aboutTextMesh = [];
+        
+        const aboutMe = [
+          'Hi, I\'m Andrew',
+          '',
+          'Software Engineering Student',
+          'Carleton University',
+          '',
+          'Embedded Systems',
+          ''
+        ];
+        aboutTextMesh.push(createTextMesh(aboutMe));
+        textMeshes.push(aboutTextMesh);
+        
+
+        let cvTextMeshes = [];
+        let cvLines = [
+          'MDA Space',
+          'Software Engineering Intern',
+          'Sept 2025 - Sept 2026',
+          '',
+        ]
+        cvTextMeshes.push(createTextMesh(cvLines));
+        cvLines = [
+          'Ajile Light Industries',
+          'Software Engineering Intern',
+          'Jan 2025 - Aug 2025',
+        ]
+        cvTextMeshes.push(createTextMesh(cvLines));
+        cvLines = [
+          'NAV Canada',
+          'Data Analyst Co-op',
+          'May 2024 - Aug 2024',
+        ];
+        cvTextMeshes.push(createTextMesh(cvLines));
+        cvLines = [
+          'Project Tech Conferences',
+          'Backend Developer',
+          'Apr 2022 - Aug 2023',
+        ]
+        cvTextMeshes.push(createTextMesh(cvLines));
+        textMeshes.push(cvTextMeshes);
+        
+        let projectsTextMeshes = [];
+        let projectLines = [
+          'Calisthenics Coach',
+          ''
+        ]
+        projectsTextMeshes.push(createTextMesh(projectLines));
+        textMeshes.push(projectsTextMeshes);
+
+        setTextMeshes(textMeshes);
+        console.log('Text meshes created:', textMeshes);
+        
 
         // Animation variables
         let morphProgress = 0;
@@ -383,6 +530,9 @@ export const MorphingGLBScene = () => {
         let localCurrentShape = 0;
         let isMorphing = false;
         const constantRotationSpeed = 0.003;
+        let lastViewMode = 'objects';
+        let viewMorphProgress = 0;
+        let isViewMorphing = false;
 
         // Mouse interaction variables
         let isDragging = false;
@@ -412,6 +562,12 @@ export const MorphingGLBScene = () => {
           
           mesh.rotation.y += rotationVelocityY;
           mesh.rotation.x += rotationVelocityX;
+ 
+          // Move text with the mesh
+          if (textMeshRef.current) {
+            textMeshRef.current.rotation.y = mesh.rotation.y;
+            textMeshRef.current.rotation.x = mesh.rotation.x;
+          }
           
           previousMouseX = e.clientX;
           previousMouseY = e.clientY;
@@ -443,6 +599,12 @@ export const MorphingGLBScene = () => {
           
           mesh.rotation.y += rotationVelocityY;
           mesh.rotation.x += rotationVelocityX;
+
+          // Move text with the mesh
+          if (textMeshRef.current) {
+            textMeshRef.current.rotation.y = mesh.rotation.y;
+            textMeshRef.current.rotation.x = mesh.rotation.x;
+          }
           
           previousMouseX = e.touches[0].clientX;
           previousMouseY = e.touches[0].clientY;
@@ -468,27 +630,81 @@ export const MorphingGLBScene = () => {
           const positions = geometry.attributes.position.array;
           const targetPositions = geometry.attributes.targetPosition.array;
           const originalPositions = geometry.attributes.originalPosition.array;
+          
+          // Constant rotation for the model (only in objects mode)
+          if (viewModeRef.current === 'objects') {
+            mesh.rotation.y += constantRotationSpeed;
+            // Fade out text
+            if (textMeshRef.current && textMeshRef.current.material.opacity > 0) {
+              textMeshRef.current.material.opacity -= 0.02;
+            }
+          } else if (viewModeRef.current === 'about' || viewModeRef.current === 'projects' || viewModeRef.current === 'icons' || viewModeRef.current === 'CV') {
+            // Keep scroll facing forward
+            const targetRotX = 0;
+            const targetRotY = 0;
+            mesh.rotation.x += (targetRotX - mesh.rotation.x) * 0.1;
+            mesh.rotation.y += (targetRotY - mesh.rotation.y) * 0.1;
 
-          // Constant rotation for the model
-          mesh.rotation.y += constantRotationSpeed;
-          // mesh.rotation.x += constantRotationSpeed * 0.5;
+             // Sync text with mesh
+            if (textMeshRef.current) {
+              textMeshRef.current.rotation.x = mesh.rotation.x;
+              textMeshRef.current.rotation.y = mesh.rotation.y;
+              
+              // Fade in text
+              if (textMeshRef.current.material.opacity < 1) {
+                textMeshRef.current.material.opacity += 0.01;
+              }
+            }
+          }
 
           // Apply inertia from dragging on top of constant rotation
           if (!isDragging) {
             mesh.rotation.y += rotationVelocityY;
             mesh.rotation.x += rotationVelocityX;
+            // Sync text rotation
+            if (textMeshRef.current && viewModeRef.current === 'about') {
+              textMeshRef.current.rotation.y = mesh.rotation.y;
+              textMeshRef.current.rotation.x = mesh.rotation.x;
+            }
             rotationVelocityX *= damping;
             rotationVelocityY *= damping;
           }
 
           // Rotate background sphere in opposite direction
-          // backgroundSphere.rotation.y -= constantRotationSpeed * 0.2;
-          // backgroundSphere.rotation.x -= constantRotationSpeed * 0.1;
+          // shardGroup.rotation.y -= constantRotationSpeed * 0.4;
+          // shardGroup.rotation.x -= constantRotationSpeed * 0.2;
+          
+          // Rotate individual shards
+          shardMeshes.forEach(shard => {
+            shard.rotation.x += shard.userData.rotationSpeed.x;
+            shard.rotation.y += shard.userData.rotationSpeed.y;
+            shard.rotation.z += shard.userData.rotationSpeed.z;
+          });
 
           frameCount++;
 
-          // Trigger morph
-          if (frameCount % shapeChangeInterval === 0 && modelDataRef.current.length > 1) {
+          // Handle view mode morphing
+          if (isViewMorphing && viewMorphProgress < 1) {
+            viewMorphProgress += 1 / morphDuration;
+            const eased = viewMorphProgress < 0.5
+              ? 2 * viewMorphProgress * viewMorphProgress
+              : 1 - Math.pow(-2 * viewMorphProgress + 2, 2) / 2;
+
+            for (let i = 0; i < positions.length; i += 3) {
+              positions[i] = originalPositions[i] + (targetPositions[i] - originalPositions[i]) * eased;
+              positions[i + 1] = originalPositions[i + 1] + (targetPositions[i + 1] - originalPositions[i + 1]) * eased;
+              positions[i + 2] = originalPositions[i + 2] + (targetPositions[i + 2] - originalPositions[i + 2]) * eased;
+            }
+            geometry.attributes.position.needsUpdate = true;
+            geometry.computeVertexNormals();
+
+            if (viewMorphProgress >= 1) {
+              isViewMorphing = false;
+            }
+          }
+
+          // Trigger morph (only in objects mode)
+          if (viewModeRef.current === 'objects' && frameCount % shapeChangeInterval === 0 && modelDataRef.current.length > 1 && !isViewMorphing) {
             morphProgress = 0;
             isMorphing = true;
             const nextShape = (localCurrentShape + 1) % modelDataRef.current.length;
@@ -499,10 +715,48 @@ export const MorphingGLBScene = () => {
             geometry.attributes.originalPosition.array.set(positions);
             
             localCurrentShape = nextShape;
+            lastViewMode = 'objects';
+            
+          }else if (viewModeRef.current === 'about' && lastViewMode !== 'about') {
+            // Switch to about model
+            morphProgress = 0;
+            isMorphing = true;
+
+            const nextModel = scrollModelRef.current;
+            geometry.attributes.targetPosition.array.set(nextModel.positions);
+            geometry.attributes.originalPosition.array.set(positions);
+            lastViewMode = 'about';
+          }else if (viewModeRef.current === 'projects' && lastViewMode !== 'projects') {
+            // Switch to projects model
+            morphProgress = 0;
+            isMorphing = true;
+
+            const nextModel = scrollModelRef.current;
+            geometry.attributes.targetPosition.array.set(nextModel.positions);
+            geometry.attributes.originalPosition.array.set(positions);
+            lastViewMode = 'projects';
+          }else if (viewModeRef.current === 'CV' && lastViewMode !== 'CV') {
+            // Switch to CV model
+            morphProgress = 0;
+            isMorphing = true;
+
+            const nextModel = scrollModelRef.current;
+            geometry.attributes.targetPosition.array.set(nextModel.positions);
+            geometry.attributes.originalPosition.array.set(positions);
+            lastViewMode = 'CV';
+          }else if (viewModeRef.current === 'icons' && lastViewMode !== 'icons') {
+            // Switch to icons model
+            morphProgress = 0;
+            isMorphing = true;
+
+            const nextModel = scrollModelRef.current;
+            geometry.attributes.targetPosition.array.set(nextModel.positions);
+            geometry.attributes.originalPosition.array.set(positions);
+            lastViewMode = 'icons';
           }
 
-          // Morphing animation
-          if (isMorphing && morphProgress < 1) {
+          // Morphing animation (only when not view morphing)
+          if (isMorphing && morphProgress < 1 && !isViewMorphing) {
             morphProgress += 1 / morphDuration;
             const eased = morphProgress < 0.5
               ? 2 * morphProgress * morphProgress
@@ -523,13 +777,14 @@ export const MorphingGLBScene = () => {
 
           // Ripple effect
           ripplePhase += 0.05;
-          if (morphProgress > 0 && morphProgress < 1) {
+          if ((morphProgress > 0 && morphProgress < 1 && !isViewMorphing) || (isViewMorphing && viewMorphProgress > 0 && viewMorphProgress < 1)) {
+            const activeProgress = isViewMorphing ? viewMorphProgress : morphProgress;
             for (let i = 0; i < positions.length; i += 3) {
               const x = positions[i];
               const y = positions[i + 1];
               const z = positions[i + 2];
               const dist = Math.sqrt(x * x + y * y + z * z);
-              const ripple = Math.sin(dist * 5 - ripplePhase * 3) * 0.05 * (1 - morphProgress);
+              const ripple = Math.sin(dist * 5 - ripplePhase * 3) * 0.05 * (1 - activeProgress);
               
               positions[i] += x * ripple;
               positions[i + 1] += y * ripple;
@@ -543,7 +798,7 @@ export const MorphingGLBScene = () => {
         };
 
         animate();
-
+        setLoading(false);
         // Cleanup event listeners
         return () => {
           canvas.removeEventListener('mousedown', handleMouseDown);
@@ -607,6 +862,52 @@ export const MorphingGLBScene = () => {
     };
   }, []);
 
+  const handleButtonClick = (mode) => {
+
+    if (viewModeRef.current === mode && mode !== 'objects') {
+      // Toggle back to objects mode
+      viewModeRef.current = 'objects';
+      setCurrentViewMode('objects');
+    } else {
+      viewModeRef.current = mode;
+      setCurrentViewMode(mode);
+      if (mode !== 'objects' && mode !== 'icons') {
+        // Fade out text
+        if (textMeshRef.current && textMeshRef.current.material.opacity > 0) {
+          textMeshRef.current.material.opacity = 0;
+        }
+        textMeshRef.current = textMeshes[textMap[mode]][0];
+      }
+    }
+  };
+
+  const handleScrollButtonClick = (direction) => {
+    if (direction === 'previous') {
+      if (textIndex.current === 0){
+        return;
+      }
+      textIndex.current = (textIndex.current - 1) % textMeshes[textMap[viewModeRef.current]].length;
+    } else if (direction === 'next') {
+      if (textIndex.current === textMeshes[textMap[viewModeRef.current]].length -1){
+        return;
+      }
+      textIndex.current = (textIndex.current + 1) % textMeshes[textMap[viewModeRef.current]].length;
+    }
+
+    // Fade out text
+    if (textMeshRef.current && textMeshRef.current.material.opacity > 0) {
+      textMeshRef.current.material.opacity = 0;
+    }
+    textMeshRef.current = textMeshes[textMap[viewModeRef.current]][textIndex.current];
+  }
+
+  const socialLinks = {
+    mail: 'mailto:andrew.x.L815@email.com',
+    phone: 'tel:+1 613-864-9098',
+    linkedin: 'https://linkedin.com/in/yourprofile',
+    github: 'https://github.com/yourprofile'
+  };
+
   if (error) {
     return (
       <div className="w-full h-screen bg-black flex items-center justify-center">
@@ -622,7 +923,7 @@ export const MorphingGLBScene = () => {
   }
 
   return (
-    <div className="w-full h-screen bg-white flex items-center justify-center overflow-hidden">
+    <div className="w-full h-screen bg-white flex items-center justify-center overflow-hidden relative">
       {loading && (
         <div className="absolute z-10 text-gray-800 text-xl font-mono">
           Loading models...
@@ -633,11 +934,169 @@ export const MorphingGLBScene = () => {
         className="w-full h-full cursor-grab active:cursor-grabbing"
         style={{ display: 'block' }}
       />
+      
+      {/* Glass Shard Buttons */}
       {!loading && (
-        <div className="absolute bottom-8 left-8 text-gray-800 font-mono text-sm opacity-50">
-          MODEL {currentShape + 1} / {modelDataRef.current.length}
-        </div>
+        <>
+          <div className="absolute bottom-8 left-1/2 transform -translate-x-1/2 flex gap-4 z-20">
+            {/* Button 1 - Home/Objects */}
+            <button
+              onClick={() => handleButtonClick('objects')}
+              className={`relative w-16 h-16 transition-all duration-300 ${
+                currentViewMode === 'objects' ? 'opacity-100 scale-110' : 'opacity-70 hover:opacity-100 hover:scale-105'
+              }`}
+              style={{
+                clipPath: 'polygon(50% 0%, 100% 40%, 80% 100%, 20% 100%, 0% 40%)',
+                background: 'linear-gradient(135deg, rgba(255,255,255,0.9), rgba(255,255,255,0.6))',
+                backdropFilter: 'blur(10px)',
+                border: '1px solid rgba(255,255,255,0.8)',
+                boxShadow: '0 4px 6px rgba(0,0,0,0.1), inset 0 1px 2px rgba(255,255,255,0.8)'
+              }}
+            >
+              <div className="absolute inset-0 flex items-center justify-center text-gray-800 font-bold text-xs">
+                HOME
+              </div>
+            </button>
+
+            {/* Button 2 - About/Scroll */}
+            <button
+              onClick={() => handleButtonClick('about')}
+              className={`relative w-16 h-16 transition-all duration-300 ${
+                currentViewMode === 'about' ? 'opacity-100 scale-110' : 'opacity-70 hover:opacity-100 hover:scale-105'
+              }`}
+              style={{
+                clipPath: 'polygon(50% 0%, 100% 40%, 80% 100%, 20% 100%, 0% 40%)',
+                background: 'linear-gradient(135deg, rgba(255,255,255,0.9), rgba(255,255,255,0.6))',
+                backdropFilter: 'blur(10px)',
+                border: '1px solid rgba(255,255,255,0.8)',
+                boxShadow: '0 4px 6px rgba(0,0,0,0.1), inset 0 1px 2px rgba(255,255,255,0.8)'
+              }}
+            >
+              <div className="absolute inset-0 flex items-center justify-center text-gray-800 font-bold text-xs">
+                ABOUT
+              </div>
+            </button>
+            {/* Button 3 - CV */}
+            <button
+              onClick={() => handleButtonClick('CV')}
+              className={`relative w-16 h-16 transition-all duration-300 ${
+                currentViewMode === 'CV' ? 'opacity-100 scale-110' : 'opacity-70 hover:opacity-100 hover:scale-105'
+              }`}
+              style={{
+                clipPath: 'polygon(50% 0%, 100% 40%, 80% 100%, 20% 100%, 0% 40%)',
+                background: 'linear-gradient(135deg, rgba(255,255,255,0.9), rgba(255,255,255,0.6))',
+                backdropFilter: 'blur(10px)',
+                border: '1px solid rgba(255,255,255,0.8)',
+                boxShadow: '0 4px 6px rgba(0,0,0,0.1), inset 0 1px 2px rgba(255,255,255,0.8)'
+              }}
+            >
+              <div className="absolute inset-0 flex items-center justify-center text-gray-800 font-bold text-xs">
+                CV
+              </div>
+            </button>
+            {/* Button 4 - Projects */}
+            <button
+              onClick={() => handleButtonClick('projects')}
+              className={`relative w-16 h-16 transition-all duration-300 ${
+                currentViewMode === 'projects' ? 'opacity-100 scale-110' : 'opacity-70 hover:opacity-100 hover:scale-105'
+              }`}
+              style={{
+                clipPath: 'polygon(50% 0%, 100% 40%, 80% 100%, 20% 100%, 0% 40%)',
+                background: 'linear-gradient(135deg, rgba(255,255,255,0.9), rgba(255,255,255,0.6))',
+                backdropFilter: 'blur(10px)',
+                border: '1px solid rgba(255,255,255,0.8)',
+                boxShadow: '0 4px 6px rgba(0,0,0,0.1), inset 0 1px 2px rgba(255,255,255,0.8)'
+              }}
+            >
+              <div className="absolute inset-0 flex items-center justify-center text-gray-800 font-bold text-xs">
+                PROJECTS
+              </div>
+            </button>
+
+            {/* Button 5 - Contact/Icons */}
+            <button
+              onClick={() => handleButtonClick('icons')}
+              className={`relative w-16 h-16 transition-all duration-300 ${
+                currentViewMode === 'icons' ? 'opacity-100 scale-110' : 'opacity-70 hover:opacity-100 hover:scale-105'
+              }`}
+              style={{
+                clipPath: 'polygon(50% 0%, 100% 40%, 80% 100%, 20% 100%, 0% 40%)',
+                background: 'linear-gradient(135deg, rgba(255,255,255,0.9), rgba(255,255,255,0.6))',
+                backdropFilter: 'blur(10px)',
+                border: '1px solid rgba(255,255,255,0.8)',
+                boxShadow: '0 4px 6px rgba(0,0,0,0.1), inset 0 1px 2px rgba(255,255,255,0.8)'
+              }}
+            >
+              <div className="absolute inset-0 flex items-center justify-center text-gray-800 font-bold text-xs">
+                CONTACT
+              </div>
+            </button>
+          </div>
+
+          {/* Social Links (when in icons mode) */}
+          {viewModeRef.current === 'icons' && (
+            <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 flex gap-8 z-20">
+              <a
+                href={socialLinks.mail}
+                className="w-20 h-20 flex items-center justify-center bg-white bg-opacity-80 backdrop-blur-md rounded-lg shadow-lg hover:scale-110 transition-transform"
+              >
+                <span className="text-2xl">📧</span>
+              </a>
+              <a
+                href={socialLinks.phone}
+                className="w-20 h-20 flex items-center justify-center bg-white bg-opacity-80 backdrop-blur-md rounded-lg shadow-lg hover:scale-110 transition-transform"
+              >
+                <span className="text-2xl">📱</span>
+              </a>
+              <a
+                href={socialLinks.linkedin}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-20 h-20 flex items-center justify-center bg-white bg-opacity-80 backdrop-blur-md rounded-lg shadow-lg hover:scale-110 transition-transform"
+              >
+                <span className="text-2xl">💼</span>
+              </a>
+              <a
+                href={socialLinks.github}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-20 h-20 flex items-center justify-center bg-white bg-opacity-80 backdrop-blur-md rounded-lg shadow-lg hover:scale-110 transition-transform"
+              >
+                <span className="text-2xl">💻</span>
+              </a>
+            </div>
+          )}
+
+          {/* Content overlay for scroll mode */}
+          {/* {viewModeRef.current === 'scroll' && (
+            <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-96 max-h-96 overflow-y-auto p-8 text-center z-20">
+              <h2 className="text-3xl font-bold text-white mb-4">About Me</h2>
+              <p className="text-white leading-relaxed">
+                Add your content here. This text will appear over the scroll model.
+                You can add multiple paragraphs, your bio, skills, or any other information.
+              </p>
+            </div>
+          )} */}
+
+          <div className=''>
+            <button onClick={() => handleScrollButtonClick('previous')}
+              className={`absolute top-40 left-1/2 -translate-x-1/2 -translate-y-1/2 text-white  bg-opacity-0 backdrop-blur-md rounded-lg shadow-lg p-4 hover:scale-110 transition-transform ${currentViewMode === 'CV' || currentViewMode === 'projects' ? '' : 'hidden'}`}>
+              ↑
+            </button>
+            <button onClick={() => handleScrollButtonClick('next')}
+              className={`absolute bottom-40 left-1/2 -translate-x-1/2  text-white bg-opacity-0 backdrop-blur-md rounded-lg shadow-lg p-4 hover:scale-110 transition-transform ${currentViewMode === 'CV' || currentViewMode === 'projects'  ? '' : 'hidden'}`}>
+              ↓
+            </button>
+          </div>
+          <div className="absolute top-8 left-8 text-white font-mono font-bold text-lg opacity-50">
+            Andrew Li | Software Engineer
+          </div>
+          <div className="absolute bottom-8 left-8 text-white font-mono text-sm opacity-50">
+            {viewModeRef.current === 'objects' ? `MODEL ${currentShape + 1} / ${modelDataRef.current.length}` : viewModeRef.current.toUpperCase()}
+          </div>
+        </>
       )}
     </div>
   );
 };
+
